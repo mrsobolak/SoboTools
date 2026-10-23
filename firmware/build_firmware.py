@@ -36,21 +36,27 @@ OUT_DIR = os.path.join(HERE, "..", "sobolak_repair", "firmware")
 #   env:     PlatformIO environment
 #   set:     {OPTION: value} -> "#define OPTION value" (value None = bare #define)
 #   unset:   [OPTION, ...]   -> commented out
+#   adv:     same as `set`, applied to Configuration_adv.h
+#
+# 32-bit images turn on BINARY_FILE_TRANSFER, so once a printer runs one of them,
+# Sobolak Repair can send later updates over USB straight to the printer's SD card.
+USB_UPLOAD = {"BINARY_FILE_TRANSFER": None, "MAX_CMD_SIZE": 256}
+
 TARGETS = {
     "creality_v422": {
         "title": "Creality 4.2.2 (stock, no probe)",
         "config": "CrealityV422", "env": "STM32F103RE_creality",
-        "set": {}, "unset": [],
+        "adv": USB_UPLOAD, "set": {}, "unset": [],
     },
     "creality_v422_bltouch": {
         "title": "Creality 4.2.2 + BLTouch/CR Touch",
         "config": "CrealityV422", "env": "STM32F103RE_creality",
-        "set": {"ENDER5_USE_BLTOUCH": None}, "unset": [],
+        "adv": USB_UPLOAD, "set": {"ENDER5_USE_BLTOUCH": None}, "unset": [],
     },
     "creality_v427": {
         "title": "Creality 4.2.7 (stock, no probe)",
         "config": "CrealityV427", "env": "STM32F103RE_creality",
-        "set": {}, "unset": [],
+        "adv": USB_UPLOAD, "set": {}, "unset": [],
     },
     "creality_v1": {
         "title": "Creality 1.1.x (ATmega1284P) - needs bootloader",
@@ -60,17 +66,17 @@ TARGETS = {
     "skr_mini_e3_v1_2": {
         "title": "BigTreeTech SKR Mini E3 V1.2",
         "config": "BigTreeTech SKR Mini E3 1.2", "env": "STM32F103RC_btt",
-        "set": {}, "unset": [],
+        "adv": USB_UPLOAD, "set": {}, "unset": [],
     },
     "skr_mini_e3_v2": {
         "title": "BigTreeTech SKR Mini E3 V2.0",
         "config": "BigTreeTech SKR Mini E3 1.2", "env": "STM32F103RC_btt",
-        "set": {"MOTHERBOARD": "BOARD_BTT_SKR_MINI_E3_V2_0"}, "unset": [],
+        "adv": USB_UPLOAD, "set": {"MOTHERBOARD": "BOARD_BTT_SKR_MINI_E3_V2_0"}, "unset": [],
     },
     "skr_mini_e3_v3": {
         "title": "BigTreeTech SKR Mini E3 V3.0",
         "config": "BigTreeTech SKR Mini E3 1.2", "env": "STM32G0B1RE_btt",
-        "set": {"MOTHERBOARD": "BOARD_BTT_SKR_MINI_E3_V3_0"}, "unset": [],
+        "adv": USB_UPLOAD, "set": {"MOTHERBOARD": "BOARD_BTT_SKR_MINI_E3_V3_0"}, "unset": [],
     },
 }
 
@@ -100,6 +106,7 @@ def build(name, spec, marlin, configs, pio):
         if fn.endswith(".h"):
             shutil.copy(os.path.join(src, fn), os.path.join(dst, fn))
     edit_config(os.path.join(dst, "Configuration.h"), spec["set"], spec["unset"])
+    edit_config(os.path.join(dst, "Configuration_adv.h"), spec.get("adv", {}), [])
 
     build_dir = os.path.join(marlin, ".pio", "build", spec["env"])
     shutil.rmtree(build_dir, ignore_errors=True)
@@ -118,6 +125,7 @@ def build(name, spec, marlin, configs, pio):
     return {
         "file": out_name, "title": spec["title"], "env": spec["env"],
         "config": f"{E5P}/{spec['config']}", "set": spec["set"], "unset": spec["unset"],
+        "adv": spec.get("adv", {}), "usb_upload": "BINARY_FILE_TRANSFER" in spec.get("adv", {}),
         "size": len(data), "sha256": hashlib.sha256(data).hexdigest(),
     }
 

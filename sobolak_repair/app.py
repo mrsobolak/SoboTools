@@ -6,11 +6,11 @@ import threading
 import tkinter as tk
 import traceback
 
-from . import APP_NAME, __version__, diagnose as dx, flasher, printer, storage
+from . import APP_NAME, __version__, diagnose as dx, flasher, printer, storage, usb_upload
 from . import theme as T
 
 COMPANY = "Sobolak Technologies"
-STEPS = ["Connect", "Diagnose", "Firmware", "SD card", "Install", "Verify"]
+STEPS = ["Connect", "Diagnose", "Firmware", "Send", "Install", "Verify"]
 GAP = 16
 
 TARGET_INFO = {
@@ -50,6 +50,7 @@ class Session:
         self.before = None
         self.target = None
         self.written = None
+        self.method = None
         self.report_path = None
 
 
@@ -416,8 +417,10 @@ class ResultPage(Page):
             T.label(nxt.inner, f"Install {title} firmware" if d.recommended else
                     "Install firmware for your board", "h3", wrap=T.px(250)).pack(
                 anchor="w", pady=(T.px(6), T.px(4)))
-            T.label(nxt.inner, "You'll need a microSD card and a card reader.", "small",
-                    fg=T.MUTED, wrap=T.px(250)).pack(anchor="w")
+            T.label(nxt.inner, "Sent over USB to the printer's own card, no reader needed."
+                    if d.usb_upload else "This first update needs a microSD card reader. "
+                    "Later updates can go over USB.", "small", fg=T.MUTED,
+                    wrap=T.px(250)).pack(anchor="w")
         else:
             T.label(nxt.inner, "Nothing to install", "h3").pack(anchor="w", pady=(T.px(6), 0))
 
@@ -501,76 +504,116 @@ class BoardPage(Page):
 
 class CardPage(Page):
     step = 3
-    title = "Prepare the SD card."
-    subtitle = "Put a microSD card into this PC's card reader."
+    title = "Send the firmware."
+    subtitle = "Over USB straight to the printer's own microSD card, or with a card reader."
 
     def build(self):
         g = bento(self, 3)
         g.pack(fill="both", expand=True)
-        main = place(T.Card(g), 0, 0, colspan=2)
-        top = tk.Frame(main.inner, bg=T.CARD)
-        top.pack(fill="x", pady=(0, T.px(12)))
-        T.label(top, "Choose the card", "h3").pack(side="left")
-        T.Button(top, "Refresh", self.refresh, style="secondary", height=34).pack(side="right")
-        self.drives_box = tk.Frame(main.inner, bg=T.CARD)
-        self.drives_box.pack(fill="x")
-        self.notes = tk.Frame(main.inner, bg=T.CARD)
-        self.notes.pack(fill="x", pady=(T.px(10), 0))
-        act = tk.Frame(main.inner, bg=T.CARD)
+        self.method_card = place(T.Card(g), 0, 0, colspan=2)
+        self.method = tk.StringVar()
+        self.method_box = tk.Frame(self.method_card.inner, bg=T.CARD)
+        self.method_box.pack(fill="x")
+        self.detail = tk.Frame(self.method_card.inner, bg=T.CARD)
+        self.detail.pack(fill="x", pady=(T.px(14), 0))
+        act = tk.Frame(self.method_card.inner, bg=T.CARD)
         act.pack(fill="x", pady=(T.px(16), 0))
-        self.write_btn = T.Button(act, "Write firmware", self.write)
+        self.write_btn = T.Button(act, "Send firmware", self.write)
         self.write_btn.pack(side="left")
         self.result = T.label(act, "", "body", wrap=T.px(400))
         self.result.pack(side="left", padx=T.px(16))
+        self.bar = T.Progress(self.method_card.inner)
         self.drive_var = tk.StringVar()
         self.drives = {}
 
-        req = place(T.Card(g), 0, 2)
-        eyebrow(req.inner, "Card requirements").pack(anchor="w", pady=(0, T.px(10)))
-        for kind, text in (("ok", "microSD, 8 to 16 GB"), ("ok", "Formatted as FAT32"),
-                           ("ok", "Old firmware files are removed for you"),
-                           ("info", "The file gets a new name every time, because Creality "
-                                    "boards skip names they've already installed")):
-            row = tk.Frame(req.inner, bg=T.CARD)
+        self.req = place(T.Card(g), 0, 2)
+
+    # ---- method selection ----------------------------------------------
+    def on_show(self):
+        s, d = self.app.session, self.app.session.diag
+        s.written = None
+        self.result.config(text="")
+        self.bar.pack_forget()
+        for w in self.method_box.winfo_children():
+            w.destroy()
+        T.label(self.method_box, "How should the firmware get to the printer?", "h3").pack(
+            anchor="w", pady=(0, T.px(12)))
+        if target_family(s.target) == "creality_avr":
+            self.method.set("")
+            T.label(self.method_box, "1.1.x boards are flashed over USB with avrdude, which this "
+                    "version doesn't do yet.", "body", fg=T.ORANGE, wrap=T.px(560)).pack(anchor="w")
+            self.write_btn.update_button(enabled=False)
+            return
+        usb_desc = ("Writes the file to the microSD card that's already in the printer. No card "
+                    "reader needed." if d.usb_upload else
+                    "Not available: this printer's current firmware can't receive files. After "
+                    "this repair it can, so future updates won't need a reader.")
+        if d.usb_upload:
+            T.OptionCard(self.method_box, "Over USB", usb_desc, self.method, "usb",
+                         badge="No card reader", width=T.px(600),
+                         command=self.refresh).pack(fill="x", pady=T.px(5))
+        T.OptionCard(self.method_box, "Card reader", "Copy the file to a microSD card on this PC, "
+                     "then move the card to the printer.", self.method, "reader",
+                     width=T.px(600), command=self.refresh).pack(fill="x", pady=T.px(5))
+        if not d.usb_upload:
+            T.label(self.method_box, usb_desc, "small", fg=T.MUTED, wrap=T.px(600)).pack(
+                anchor="w", pady=(T.px(6), 0))
+        self.method.set("usb" if d.usb_upload else "reader")
+        self.refresh()
+
+    def refresh(self):
+        for w in self.detail.winfo_children() + self.req.inner.winfo_children():
+            w.destroy()
+        if self.method.get() == "usb":
+            self._usb_details()
+        else:
+            self._reader_details()
+        self.app.refresh_actions()
+
+    def _requirements(self, title, items):
+        eyebrow(self.req.inner, title).pack(anchor="w", pady=(0, T.px(10)))
+        for kind, text in items:
+            row = tk.Frame(self.req.inner, bg=T.CARD)
             row.pack(fill="x", pady=T.px(4))
             T.Glyph(row, kind, 20).pack(side="left", anchor="n")
             T.label(row, text, "small", fg=T.MUTED, wrap=T.px(230)).pack(side="left",
                                                                          padx=T.px(10))
 
-    def on_show(self):
-        self.app.session.written = None
-        self.result.config(text="")
-        self.refresh()
+    def _usb_details(self):
+        d = self.app.session.diag
+        notes = []
+        if d.sd_card is False:
+            notes.append(("warn", "The printer doesn't see a card right now. Put a microSD card "
+                                  "in the printer, then click Send firmware."))
+        notes.append(("info", "Takes about a minute. Old firmware files on the printer's card "
+                              "are removed first."))
+        findings_list(self.detail, notes, T.px(560))
+        self._requirements("Over USB", [
+            ("ok", "USB cable to this PC"), ("ok", "microSD card in the printer"),
+            ("ok", "Nothing to plug into the PC"),
+            ("info", "The file gets a new name each time, because Creality boards skip names "
+                     "they've already installed")])
+        self.write_btn.update_button(text="Send to printer",
+                                     enabled=bool(flasher.firmware_path(self.app.session.target)))
 
-    def refresh(self):
-        for w in self.drives_box.winfo_children():
-            w.destroy()
+    def _reader_details(self):
         s = self.app.session
-        if target_family(s.target) == "creality_avr":
-            self.drives = {}
-            T.label(self.drives_box, "1.1.x boards can't be flashed from an SD card. They need a "
-                    "USB upload, which this version doesn't do yet.", "body", fg=T.ORANGE,
-                    wrap=T.px(560)).pack(anchor="w")
-            self.refresh_notes()
-            return
+        top = tk.Frame(self.detail, bg=T.CARD)
+        top.pack(fill="x", pady=(0, T.px(8)))
+        T.label(top, "Card", "label").pack(side="left")
+        T.Button(top, "Refresh", self.refresh, style="secondary", height=32).pack(side="right")
         self.drives = {d.root: d for d in flasher.list_drives()}
         if not self.drives:
             self.drive_var.set("")
-            T.label(self.drives_box, "No SD card found. Insert one and click Refresh.", "body",
-                    fg=T.ORANGE).pack(anchor="w")
+            T.label(self.detail, "No card reader found. Insert a card and click Refresh.",
+                    "body", fg=T.ORANGE).pack(anchor="w")
         else:
             if self.drive_var.get() not in self.drives:
                 self.drive_var.set(next(iter(self.drives)))
             for root, d in self.drives.items():
-                T.OptionCard(self.drives_box, d.label or "Removable disk", d.display,
-                             self.drive_var, root, width=T.px(600),
-                             command=self.refresh_notes).pack(fill="x", pady=T.px(5))
-        self.refresh_notes()
-
-    def refresh_notes(self):
-        for w in self.notes.winfo_children():
-            w.destroy()
-        s = self.app.session
+                T.OptionCard(self.detail, d.label or "Removable disk", d.display, self.drive_var,
+                             root, width=T.px(600), command=self.refresh).pack(fill="x",
+                                                                              pady=T.px(4))
         d = self.drives.get(self.drive_var.get())
         notes = []
         if d:
@@ -579,32 +622,55 @@ class CardPage(Page):
             if old:
                 notes.append(("info", "Will delete old firmware: " + ", ".join(old)))
         has_fw = bool(flasher.firmware_path(s.target))
-        if not has_fw and target_family(s.target) != "creality_avr":
+        if not has_fw:
             notes.append(("error", "This copy of Sobolak Repair doesn't include that firmware. "
                                    "Download the full release."))
-        findings_list(self.notes, notes, T.px(540))
-        self.write_btn.update_button(enabled=bool(d) and has_fw)
-        self.app.refresh_actions()
+        findings_list(self.detail, notes, T.px(560))
+        self._requirements("Card reader", [
+            ("ok", "microSD, 8 to 16 GB"), ("ok", "Formatted as FAT32"),
+            ("ok", "Old firmware files are removed for you"),
+            ("info", "The file gets a new name each time, because Creality boards skip names "
+                     "they've already installed")])
+        self.write_btn.update_button(text="Write to card", enabled=bool(d) and has_fw)
 
+    # ---- sending -------------------------------------------------------
     def write(self):
         s = self.app.session
-        drive = self.drives[self.drive_var.get()]
+        method = self.method.get()
         self.write_btn.update_button(enabled=False)
-        self.result.config(text="Writing...", fg=T.MUTED)
+        self.result.config(text="Sending..." if method == "usb" else "Writing...", fg=T.MUTED)
 
         def done(name, error):
+            self.bar.pack_forget()
             if error:
-                self.result.config(text=f"Couldn't write the card: {error}", fg=T.RED)
+                self.result.config(text=f"Couldn't send the firmware: {error}", fg=T.RED)
                 self.write_btn.update_button(enabled=True)
                 return
-            s.written = name
-            self.result.config(text=f"Wrote {name} and verified it. Eject the card.", fg=T.GREEN)
+            s.written, s.method = name, method
+            self.result.config(text=(f"Sent {name} to the printer's card." if method == "usb"
+                                     else f"Wrote {name} and verified it. Eject the card."),
+                               fg=T.GREEN)
             storage.update_fleet(s.name, status="waiting",
-                                 detail=f"{TARGET_INFO[s.target][0]} firmware on SD card")
+                                 detail=f"{TARGET_INFO[s.target][0]} firmware ready to install")
             self.app.refresh_actions()
 
-        self.app.run_bg(lambda log: flasher.write_firmware(drive, s.target,
-                                                           target_family(s.target)), done)
+        if method == "usb":
+            self.bar.pack(fill="x", pady=(T.px(14), 0))
+            self.bar.set(0.0)
+            progress = lambda f: self.app.jobs.put((self.bar.set, (f,)))  # noqa: E731
+
+            def job(log):
+                with open(flasher.firmware_path(s.target), "rb") as f:
+                    data = f.read()
+                name = flasher.target_filename(target_family(s.target)).upper()
+                usb_upload.upload_firmware(s.port, s.data["baud"], data, name, log, progress)
+                return name
+
+            self.app.run_bg(job, done)
+        else:
+            drive = self.drives[self.drive_var.get()]
+            self.app.run_bg(lambda log: flasher.write_firmware(drive, s.target,
+                                                               target_family(s.target)), done)
 
     def back(self):
         return ("Back", True)
@@ -643,6 +709,11 @@ class InstallPage(Page):
                  "Switch the printer on and wait one minute. The screen can stay blank while "
                  "it updates",
                  "The screen shows its normal status page again"]
+        if s.method == "usb":
+            steps = ["Switch the printer off (leave the USB cable plugged in)",
+                     "Switch the printer on and wait one minute. The screen can stay blank "
+                     "while it updates",
+                     "The screen shows its normal status page again"]
         self.vars = [tk.BooleanVar(value=False) for _ in steps]
         for i, (text, var) in enumerate(zip(steps, self.vars)):
             T.CheckRow(self.steps.inner, text, var, self.app.refresh_actions,
@@ -651,7 +722,7 @@ class InstallPage(Page):
         self.note.config(text=(
             "The printer gives no 'done' signal, so the next step scans it to make sure.\n\n"
             + ("This board renames firmware.bin to FIRMWARE.CUR once it's installed." if btt else
-               f"Leave {s.written} on the card. It's harmless; Creality boards skip a name "
+               f"{s.written} stays on the card. That's harmless: Creality boards skip a name "
                "they've already installed.")))
         self.app.refresh_actions()
 

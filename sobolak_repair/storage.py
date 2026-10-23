@@ -54,7 +54,7 @@ def format_report(name, data, diag, extra=None):
                 f"Recommended: {diag.recommended or '(choose by board label)'}"]
     for line in extra or []:
         out.append(line)
-    for section in ("boot", "m115", "m122", "m503", "reboot"):
+    for section in ("boot", "m115", "m122", "m503", "m21", "reboot"):
         if data.get(section):
             out += ["", f"----- {section.upper()} -----"] + data[section]
     return "\n".join(out) + "\n"

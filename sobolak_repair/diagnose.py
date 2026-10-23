@@ -31,6 +31,8 @@ class Diagnosis:
     flash_helps: bool = False
     has_probe: bool = False
     firmware: dict = field(default_factory=dict)
+    usb_upload: bool = False        # firmware can receive files over USB (M28 B1)
+    sd_card: bool = None            # card in the printer's slot (None = unknown)
 
 
 def parse_m115(lines):
@@ -109,6 +111,10 @@ def diagnose(data):
     tests = parse_tmc_tests(every)
     bad = {a: s for a, s in tests.items() if s.upper() != "OK"}
     fam, board_text, cands, rec = identify_board(data, has_probe)
+    usb_upload = any("Cap:BINARY_FILE_TRANSFER:1" in l for l in data["m115"])
+    m21 = data.get("m21", [])
+    sd_card = (True if any("SD card ok" in l for l in m21) else
+               False if any(("No SD card" in l or "init fail" in l) for l in m21) else None)
 
     findings = [("info", f"Firmware: {fw.get('FIRMWARE_NAME', 'unknown')}")]
     if "MACHINE_TYPE" in fw:
@@ -124,9 +130,17 @@ def diagnose(data):
         findings.append(("error", "Firmware reported TMC CONNECTION ERROR."))
     for axis, status in tests.items():
         findings.append(("ok" if status.upper() == "OK" else "error", f"Driver {axis}: {status}"))
+    if sd_card is not None:
+        findings.append(("info", "A microSD card is in the printer's slot." if sd_card else
+                                 "No microSD card in the printer's slot."))
+    findings.append(("ok" if usb_upload else "info",
+                     "Firmware can receive files over USB, so no card reader is needed."
+                     if usb_upload else "Firmware can't receive files over USB, so the first "
+                     "update needs a card reader."))
 
     common = dict(findings=findings, board_family=fam, board_text=board_text,
-                  candidates=cands, recommended=rec, has_probe=has_probe, firmware=fw)
+                  candidates=cands, recommended=rec, has_probe=has_probe, firmware=fw,
+                  usb_upload=usb_upload, sd_card=sd_card)
 
     if m122_unknown and not boot_error:
         return Diagnosis(

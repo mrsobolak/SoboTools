@@ -37,6 +37,18 @@ flashed the same image onto all of them.
 | All four printers fixed | **~70%** (lower if one of them really has a hardware fault) |
 | Fully hands-free (no SD card) | Not possible with the stock bootloader |
 
+### Only a USB cable and a microSD card in the printer (no card reader)
+
+The Creality bootloader only installs firmware from the printer's SD card. Plain `M28` uploads
+corrupt binary files, so the file can only travel over USB if the **current** firmware has
+Marlin's binary file transfer (`M28 B1`, reported as `Cap:BINARY_FILE_TRANSFER:1`).
+
+| Situation | Odds |
+|---|---|
+| Current (school) firmware supports USB upload | ~10%. It's off by default in Marlin. |
+| A printer can be fixed with no card reader at all | ~10% now; **100% for every update after the first**, because Sobolak Repair's builds enable it |
+| Otherwise | Borrow or buy one microSD reader (~$5–10) **once**, then fix all four |
+
 ## Remaining risks
 
 * **4.2.2 vs 4.2.7:** software can't tell them apart, and their STEP/DIR pins are swapped. The

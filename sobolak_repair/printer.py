@@ -151,7 +151,7 @@ def scan(port, log=print, reboot=False):
         "port": port.device, "usb_desc": port.friendly, "usb_family": port.usb_family,
         "vid": port.vid, "pid": port.pid,
         "connected": False, "saw_binary": False, "baud": None,
-        "boot": [], "m115": [], "m122": [], "m503": [], "reboot": [],
+        "boot": [], "m115": [], "m122": [], "m503": [], "m21": [], "reboot": [],
     }
     p = Printer(port, log)
     try:
@@ -163,6 +163,8 @@ def scan(port, log=print, reboot=False):
         data["m122"] = p.send("M122", timeout=10.0)
         log("Reading saved settings (M503)...")
         data["m503"] = p.send("M503", timeout=8.0)
+        log("Checking the printer's SD card slot (M21)...")
+        data["m21"] = p.send("M21", timeout=8.0)
         if reboot:
             log("Restarting the printer to capture its startup messages...")
             p.ser.write(b"M997\n")

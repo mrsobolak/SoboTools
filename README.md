@@ -20,9 +20,15 @@ nothing to install, and it runs on Windows 10 and 11.
 1. Switch the printer on and connect it to the PC with USB. Close Cura and OctoPrint.
 2. Open Sobolak Repair and click **Start repair**.
 3. Give the printer a name and pick its port. The scan takes about 20 seconds.
-4. If the firmware is the problem, choose the board (the best match is pre-selected), insert a
-   microSD card (8–16 GB, FAT32) and click **Write firmware**.
-5. Move the card to the printer, power-cycle it, and let Sobolak Repair confirm the fix.
+4. If the firmware is the problem, choose the board (the best match is pre-selected) and send
+   the firmware one of two ways:
+   * **Over USB**: Sobolak Repair writes the file straight onto the microSD card that's already
+     in the printer. No card reader needed. This needs firmware with Marlin's binary file
+     transfer (`Cap:BINARY_FILE_TRANSFER:1`). Every Sobolak Repair build has it, so once a
+     printer is repaired, all later updates can go over USB.
+   * **Card reader**: copy the file to a microSD card (8–16 GB, FAT32) on the PC and move the
+     card to the printer.
+5. Power-cycle the printer and let Sobolak Repair confirm the fix.
 6. Optional: reset settings to defaults and run the 1 cm motor test.
 
 Reports are saved to `Documents\Sobolak Repair\reports\`, and the list of printers is kept in
@@ -52,6 +58,9 @@ edits are listed in [`firmware/build_firmware.py`](firmware/build_firmware.py).
 | `creality_v427` | Creality 4.2.7 | SD card |
 | `skr_mini_e3_v1_2` / `_v2` / `_v3` | BigTreeTech SKR Mini E3 | SD card, `firmware.bin` |
 | `creality_v1` | Creality 1.1.x (8-bit) | USB / avrdude (not automated yet) |
+
+All 32-bit images are built with `BINARY_FILE_TRANSFER` (and `MAX_CMD_SIZE 256`), so they can
+receive future updates over USB.
 
 The 4.2.2 and 4.2.7 boards have their STEP and DIR pins swapped. If the motor test buzzes
 instead of moving, the app offers the other version.
