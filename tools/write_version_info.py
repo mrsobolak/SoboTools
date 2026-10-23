@@ -15,7 +15,6 @@ template = f"""VSVersionInfo(
       StringStruct('FileDescription', '{APP_NAME}'),
       StringStruct('FileVersion', '{__version__}'),
       StringStruct('InternalName', 'SobolakRepair'),
-      StringStruct('LegalCopyright', 'Sobolak Technologies'),
       StringStruct('OriginalFilename', 'SobolakRepair.exe'),
       StringStruct('ProductName', '{APP_NAME}'),
       StringStruct('ProductVersion', '{__version__}')])]),

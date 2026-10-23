@@ -84,9 +84,10 @@ To build firmware locally, clone Marlin and Configurations at the versions named
 python firmware/build_firmware.py --marlin path/to/Marlin --configs path/to/Configurations
 ```
 
-## Licenses
+## Third-party software
 
-* Sobolak Repair © Sobolak Technologies.
+Sobolak Repair bundles two third-party components, which keep their own licenses:
+
 * Bundled firmware is built from [Marlin](https://github.com/MarlinFirmware/Marlin) (GPL-3.0).
   Its source and the exact build configuration are linked above.
 * The bundled Inter typeface is used under the SIL Open Font License 1.1
