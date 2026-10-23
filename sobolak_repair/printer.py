@@ -113,6 +113,7 @@ class Printer:
         self.boot = []
         self.m115 = []
         self.saw_binary = False
+        self.open_error = None
 
     def connect(self):
         for baud in BAUD_RATES:
@@ -120,19 +121,34 @@ class Printer:
             try:
                 ser = serial.Serial(self.port.device, baud, timeout=0.2)
             except serial.SerialException as e:
+                self.open_error = str(e)
                 self.log(f"Could not open {self.port.device}: {e}")
                 return False
-            # Opening the port resets 8-bit boards (DTR). Whatever they print while
-            # booting is a useful clue, so capture it.
-            boot, raw = _read_lines(ser, 6.0, quiet=2.5)
+            # Opening the port can restart the board (always on 8-bit boards, on some
+            # 32-bit ones too). Its startup messages are a useful clue, so capture them.
+            boot, raw = _read_lines(ser, 4.0, quiet=1.5)
             self.saw_binary |= looks_binary(raw)
-            m115 = send(ser, "M115", timeout=4.0)
-            if any("FIRMWARE_NAME" in l or l.startswith("ok") for l in m115):
-                self.ser, self.baud, self.boot, self.m115 = ser, baud, boot, m115
-                self.log(f"Connected at {baud} baud.")
-                return True
+            # A restarting Creality board can stay silent for 5-10 s (the bootloader checks
+            # the SD card first), so keep asking for a while before trying another speed.
+            heard_text = any(boot)
+            deadline = time.time() + (20.0 if heard_text else 12.0)
+            attempt = 0
+            while time.time() < deadline:
+                attempt += 1
+                if attempt > 1:
+                    self.log(f"No answer yet, asking again ({attempt})...")
+                m115 = send(ser, "M115", timeout=3.0)
+                if any("FIRMWARE_NAME" in l or l.startswith("ok") for l in m115):
+                    self.ser, self.baud, self.boot, self.m115 = ser, baud, boot, m115
+                    self.log(f"Connected at {baud} baud.")
+                    return True
+                boot += [l for l in m115 if l]
+                if m115 and not heard_text:  # it's talking, maybe still booting: wait longer
+                    heard_text = True
+                    deadline = max(deadline, time.time() + 10.0)
             _, raw = _read_lines(ser, 0.5)
             self.saw_binary |= looks_binary(raw)
+            self.boot = boot
             ser.close()
         return False
 
@@ -153,10 +169,17 @@ def scan(port, log=print, reboot=False):
         "connected": False, "saw_binary": False, "baud": None,
         "boot": [], "m115": [], "m122": [], "m503": [], "m21": [], "reboot": [],
     }
+    lines = data["log"] = []
+    show = log
+
+    def log(msg):  # keep a copy of every step for the report
+        lines.append(msg)
+        show(msg)
+
     p = Printer(port, log)
     try:
         if not p.connect():
-            data["saw_binary"] = p.saw_binary
+            data.update(saw_binary=p.saw_binary, open_error=p.open_error, boot=p.boot)
             return data
         data.update(connected=True, baud=p.baud, boot=p.boot, m115=p.m115)
         log("Asking the motor drivers how they are doing (M122)...")

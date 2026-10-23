@@ -107,7 +107,7 @@ def init(root):
     FONTS.update(
         body=pick(text, 11), small=pick(text, 10), tiny=pick(medium, 9),
         label=pick(medium, 10), button=pick(semi, 11), h3=pick(semi, 13),
-        h2=pick(display, 17), h1=pick(display, 30), brand=pick(semi, 13),
+        h2=pick(display, 16), h1=pick(display, 24), brand=pick(semi, 13),
         mono=pick([("SF Mono", "normal"), ("Cascadia Mono", "normal"), ("Consolas", "normal"),
                    ("DejaVu Sans Mono", "normal")], 10),
     )
@@ -359,6 +359,18 @@ class Card(tk.Canvas):
         self._img = None
         self.bind("<Configure>", self._resize)
         self.inner.bind("<Configure>", self._fit)
+        self.after(150, self._watch)
+
+    def _watch(self):
+        # Content added later doesn't fire <Configure> on the inner frame (its real size is
+        # pinned by the canvas), so check the requested size regularly.
+        try:
+            if not self.winfo_exists():
+                return
+            self._fit()
+        except tk.TclError:
+            return
+        self.after(150, self._watch)
 
     def _fit(self, _=None):
         need_h = self.inner.winfo_reqheight() + 2 * self.pad
@@ -691,6 +703,17 @@ class ScrollArea(tk.Frame):
         self.canvas.bind("<Configure>", self._update)
         self.bind("<Enter>", self._bind_wheel)
         self.bind("<Leave>", self._unbind_wheel)
+        # Tk sends no event when the content's *requested* size changes (only its real
+        # size, which this widget sets itself), so check for growth regularly.
+        self._last_req = None
+        self.after(150, self._watch)
+
+    def _watch(self):
+        req = (self.body.winfo_reqheight(), self.canvas.winfo_height())
+        if req != self._last_req:
+            self._last_req = req
+            self._update()
+        self.after(150, self._watch)
 
     def _bind_wheel(self, _):
         self.bind_all("<MouseWheel>", self._wheel)

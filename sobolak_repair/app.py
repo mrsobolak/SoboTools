@@ -126,60 +126,60 @@ class HomePage(Page):
     subtitle = "Find and fix TMC connection errors on Creality Ender 5 Pro printers."
 
     def build(self):
-        self.grid_ = bento(self, 3)
-        self.grid_.pack(fill="both", expand=True)
+        g = bento(self, 3)
+        g.pack(fill="both", expand=True)
 
-        hero = place(T.Card(self.grid_, pad=32), 0, 0, colspan=2)
+        hero = place(T.Card(g, pad=26), 0, 0, colspan=2)
         h = hero.inner
         eyebrow(h, "How it works", T.CYAN).pack(anchor="w")
-        T.label(h, "Plug in. Diagnose. Repaired.", "h2").pack(anchor="w", pady=(T.px(8), 0))
-        T.label(h, "Sobolak Repair asks the printer what is wrong, writes the right firmware to "
-                   "an SD card, and confirms the fix once it's installed.", "body", fg=T.MUTED,
-                wrap=T.px(520)).pack(anchor="w", pady=(T.px(8), T.px(22)))
+        T.label(h, "Plug in. Diagnose. Repaired.", "h2").pack(anchor="w", pady=(T.px(6), 0))
+        T.label(h, "Sobolak Repair asks the printer what is wrong, sends it the right "
+                   "firmware, and checks the fix. One printer at a time.", "body", fg=T.MUTED,
+                wrap=T.px(560)).pack(anchor="w", pady=(T.px(6), T.px(16)))
         steps = tk.Frame(h, bg=T.CARD)
         steps.pack(anchor="w")
-        for i, s in enumerate(("Connect USB", "Scan", "Write SD card", "Verify")):
+        for i, s in enumerate(("Connect USB", "Scan", "Send firmware", "Verify")):
             T.Pill(steps, f"{i + 1}  {s}", T.BLUE if i == 0 else T.FAINT).pack(
                 side="left", padx=(0, T.px(8)))
 
-        ring = place(T.Card(self.grid_, pad=28), 0, 2)
-        r = ring.inner
-        eyebrow(r, "Fleet health").pack(anchor="w")
-        self.ring = tk.Label(r, bg=T.CARD, bd=0)
-        self.ring.pack(pady=(T.px(12), T.px(4)))
-        self.ring_text = T.label(r, "", "small", fg=T.MUTED)
-        self.ring_text.pack()
-
+        health = place(T.Card(g, pad=22), 0, 2)
+        hi = health.inner
+        eyebrow(hi, "Fleet health").pack(anchor="w", pady=(0, T.px(8)))
+        row = tk.Frame(hi, bg=T.CARD)
+        row.pack(fill="x")
+        self.ring = tk.Label(row, bg=T.CARD, bd=0)
+        self.ring.pack(side="left")
+        stats = tk.Frame(row, bg=T.CARD)
+        stats.pack(side="left", padx=(T.px(16), 0))
         self.metrics = {}
-        for col, (key, name, colors) in enumerate((
-                ("seen", "Printers scanned", T.GRAD_BLUE),
-                ("needs", "Need repair", T.GRAD_ORANGE),
-                ("fixed", "Repaired or healthy", T.GRAD_GREEN))):
-            card = place(T.Card(self.grid_, pad=26), 1, col)
-            eyebrow(card.inner, name).pack(anchor="w")
-            big = T.GradientLabel(card.inner, "0", 34, colors, bg=T.CARD)
-            big.pack(anchor="w", pady=(T.px(6), 0))
+        for key, name, colors in (("seen", "scanned", T.GRAD_BLUE),
+                                  ("needs", "need repair", T.GRAD_ORANGE),
+                                  ("fixed", "working", T.GRAD_GREEN)):
+            line = tk.Frame(stats, bg=T.CARD)
+            line.pack(anchor="w")
+            big = T.GradientLabel(line, "0", 17, colors, bg=T.CARD)
+            big.pack(side="left")
+            T.label(line, name, "small", fg=T.MUTED).pack(side="left", padx=(T.px(8), 0))
             self.metrics[key] = (big, colors)
 
-        fleet = place(T.Card(self.grid_, pad=26), 2, 0, colspan=3)
+        fleet = place(T.Card(g, pad=24), 1, 0, colspan=3)
         top = tk.Frame(fleet.inner, bg=T.CARD)
         top.pack(fill="x")
         T.label(top, "Your printers", "h3").pack(side="left")
+        T.Button(top, "Add a printer", self.add_printer, style="secondary",
+                 height=32).pack(side="right")
         self.list = tk.Frame(fleet.inner, bg=T.CARD)
-        self.list.pack(fill="x", pady=(T.px(10), 0))
+        self.list.pack(fill="x", pady=(T.px(8), 0))
 
     def on_show(self):
         fleet = storage.load_fleet()
         fixed = sum(1 for e in fleet.values() if e.get("status") in ("repaired", "healthy"))
-        needs = len(fleet) - fixed
-        for key, val in (("seen", len(fleet)), ("needs", needs), ("fixed", fixed)):
+        for key, val in (("seen", len(fleet)), ("needs", len(fleet) - fixed), ("fixed", fixed)):
             big, colors = self.metrics[key]
             big.set(str(val), colors)
-        frac = fixed / len(fleet) if fleet else 0
-        self._ring = T.ring_image(T.px(132), frac, (T.GREEN, T.CYAN), T.CARD)
+        self._ring = T.ring_image(T.px(84), fixed / len(fleet) if fleet else 0,
+                                  (T.GREEN, T.CYAN), T.CARD)
         self.ring.config(image=self._ring)
-        self.ring_text.config(text=f"{fixed} of {len(fleet)} working" if fleet else
-                              "No printers yet")
 
         for w in self.list.winfo_children():
             w.destroy()
@@ -187,25 +187,51 @@ class HomePage(Page):
             T.label(self.list, "Nothing here yet. Click Start repair to scan your first "
                                "printer.", "body", fg=T.MUTED).pack(anchor="w", pady=T.px(6))
             return
-        rows = sorted(fleet.values(), key=lambda e: e.get("updated", ""), reverse=True)[:4]
-        for e in rows:
+        for e in sorted(fleet.values(), key=lambda e: e.get("updated", ""), reverse=True):
             status = e.get("status", "scanned")
             kind = {"repaired": "ok", "healthy": "ok", "waiting": "warn"}.get(status, "error")
             row = tk.Frame(self.list, bg=T.CARD)
-            row.pack(fill="x", pady=T.px(5))
+            row.pack(fill="x", pady=T.px(4))
             T.Glyph(row, kind, 26).pack(side="left")
             box = tk.Frame(row, bg=T.CARD)
             box.pack(side="left", padx=T.px(14))
             T.label(box, e["name"], "label").pack(anchor="w")
             T.label(box, e.get("detail", ""), "small", fg=T.MUTED).pack(anchor="w")
-            T.Pill(row, status.capitalize(), T.SEVERITY[kind]).pack(side="right")
+            done = kind == "ok"
+            T.Button(row, "Check again" if done else "Repair", lambda n=e["name"]: self.open(n),
+                     style="secondary" if done else "primary", height=32).pack(side="right")
+            T.Pill(row, status.capitalize(), T.SEVERITY[kind]).pack(side="right",
+                                                                    padx=T.px(10))
+
+    def current(self):
+        """The printer to work on: the most recent one that isn't fixed yet."""
+        fleet = storage.load_fleet()
+        open_ = [e for e in fleet.values() if e.get("status") not in ("repaired", "healthy")]
+        return max(open_, key=lambda e: e.get("updated", ""))["name"] if open_ else None
+
+    def open(self, name):
+        self.app.session = Session(name)
+        self.app.show("connect")
+
+    def add_printer(self):
+        fleet = storage.load_fleet()
+        n = len(fleet) + 1
+        while f"Printer {n}" in fleet:
+            n += 1
+        self.open(f"Printer {n}")
 
     def next(self):
-        return ("Start repair", True)
+        name = self.current()
+        if name:
+            return (f"Continue {name}", True)
+        return ("Repair next printer", True) if storage.load_fleet() else ("Start repair", True)
 
     def go_next(self):
-        self.app.session = Session(f"Printer {len(storage.load_fleet()) + 1}")
-        self.app.show("connect")
+        name = self.current()
+        if name:
+            self.open(name)
+        else:
+            self.add_printer()
 
 
 class ConnectPage(Page):
@@ -947,7 +973,7 @@ class App:
         self.jobs = queue.Queue()
 
         # Top bar: brand on the left, step tracker on the right.
-        top = tk.Frame(root, bg=T.BG, padx=T.px(40), pady=T.px(22))
+        top = tk.Frame(root, bg=T.BG, padx=T.px(40), pady=T.px(14))
         top.pack(fill="x")
         self._logo = T.logo_image(T.px(34), T.BG)
         tk.Label(top, image=self._logo, bg=T.BG, bd=0).pack(side="left")
@@ -963,10 +989,10 @@ class App:
         self.h1 = T.label(main, "", "h1")
         self.h1.pack(anchor="w", pady=(T.px(2), 0))
         self.sub = T.label(main, "", "body", fg=T.MUTED, wrap=T.px(900))
-        self.sub.pack(anchor="w", pady=(T.px(6), T.px(26)))
+        self.sub.pack(anchor="w", pady=(T.px(4), T.px(18)))
 
         bar = tk.Frame(main, bg=T.BG)
-        bar.pack(side="bottom", fill="x", pady=(T.px(6), T.px(26)))
+        bar.pack(side="bottom", fill="x", pady=(T.px(10), T.px(16)))
         self.next_btn = T.Button(bar, "Next", lambda: self.page.go_next())
         self.next_btn.pack(side="right")
         self.back_btn = T.Button(bar, "Back", lambda: self.page.go_back(), style="ghost")

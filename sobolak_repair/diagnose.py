@@ -95,11 +95,21 @@ def diagnose(data):
                 "needs a Raspberry Pi to work. Flashing Marlin makes the printer work on its own.",
                 [("warn", "Binary data received at every baud rate.")],
                 fam if fam != "unknown" else "klipper", text, cands, rec, flash_helps=True)
+        if data.get("open_error"):
+            return Diagnosis(
+                "PORT_BUSY", "Couldn't open the printer's port", "error",
+                "Windows wouldn't let Sobolak Repair use this port. Usually another program "
+                "has it open: close Cura, Pronterface, OctoPrint or a second copy of Sobolak "
+                "Repair, unplug and replug the USB cable, then scan again.",
+                [("error", data["open_error"])])
         return Diagnosis(
             "NO_RESPONSE", "Printer did not answer", "error",
-            "Nothing answered on this port. Check that it is the right port, that no other "
-            "program (Cura, Pronterface, OctoPrint) is using it, and that the printer is on.",
-            [("error", "No reply at 115200 or 250000 baud.")])
+            "Nothing answered on this port. Check the printer is switched on and that you "
+            "picked the right port (unplug the USB cable and see which one disappears), then "
+            "scan again. If the screen shows an error, power-cycle the printer first.",
+            [("error", "No reply at 115200 or 250000 baud after about 30 seconds of asking.")]
+            + ([("info", "It did print: " + " | ".join(data["boot"][:3]))]
+               if data.get("boot") else []))
 
     fw = parse_m115(data["m115"])
     every = data["boot"] + data["m122"] + data.get("reboot", [])
