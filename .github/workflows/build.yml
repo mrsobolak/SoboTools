@@ -1,0 +1,70 @@
+name: Build Sobolak Repair
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    name: Build Marlin firmware images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('firmware/build_firmware.py') }}
+      - run: pip install platformio
+      - name: Fetch Marlin and example configs
+        run: |
+          TAG=$(python -c "import sys; sys.path.insert(0,'firmware'); import build_firmware as b; print(b.MARLIN_TAG)")
+          CFG=$(python -c "import sys; sys.path.insert(0,'firmware'); import build_firmware as b; print(b.CONFIGS_BRANCH)")
+          git clone --depth 1 --branch "$TAG" https://github.com/MarlinFirmware/Marlin marlin
+          git clone --depth 1 --branch "$CFG" https://github.com/MarlinFirmware/Configurations configurations
+      - name: Build
+        run: python firmware/build_firmware.py --marlin marlin --configs configurations
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: firmware
+          path: sobolak_repair/firmware/
+          if-no-files-found: warn
+
+  windows:
+    name: Build SobolakRepair.exe
+    needs: firmware
+    if: ${{ !cancelled() }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: firmware
+          path: sobolak_repair/firmware
+      - run: pip install -r requirements.txt pyinstaller pytest
+      - run: python -m pytest -q tests
+      - run: python tools/write_version_info.py
+      - run: pyinstaller --noconfirm SobolakRepair.spec
+      - name: Smoke test (imports, fonts and firmware bundled)
+        shell: pwsh
+        run: |
+          Get-Item dist/SobolakRepair.exe | Select-Object Name, Length
+          Get-ChildItem sobolak_repair/firmware -ErrorAction SilentlyContinue | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SobolakRepair-windows
+          path: dist/SobolakRepair.exe
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/SobolakRepair.exe
